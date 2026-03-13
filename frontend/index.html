@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nova MKG — Multimodal Knowledge Graph Builder</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'nova-dark': '#0f172a',
+            'nova-primary': '#6366f1',
+            'nova-accent': '#22d3ee',
+            'nova-surface': '#1e293b',
+            'nova-border': '#334155',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #1e293b; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+    @keyframes pulse-bar { 0%,100%{ width:30%; } 50%{ width:70%; } }
+    .pulse-bar { animation: pulse-bar 1.8s ease-in-out infinite; }
+    @keyframes fade-in { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+    .fade-in { animation: fade-in .35s ease-out; }
+    .spinner { border: 2.5px solid rgba(255,255,255,.15); border-top-color: #fff; border-radius: 50%; width: 16px; height: 16px; animation: spin .6s linear infinite; display: inline-block; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body class="bg-nova-dark text-gray-100 min-h-screen">
+
+  <!-- ==================== HEADER ==================== -->
+  <header class="border-b border-nova-border bg-nova-surface/60 backdrop-blur-md sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 py-3.5 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 bg-nova-primary rounded-lg flex items-center justify-center">
+          <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold">Nova MKG</h1>
+          <p class="text-[11px] text-gray-500 -mt-0.5">Multimodal Knowledge Graph Builder</p>
+        </div>
+      </div>
+      <span class="text-xs bg-slate-800 text-gray-400 px-2.5 py-1 rounded-full border border-nova-border hidden sm:inline">
+        Powered by Amazon Nova via Bedrock
+      </span>
+    </div>
+  </header>
+
+  <!-- ==================== ERROR BANNER ==================== -->
+  <div id="error-banner" class="max-w-7xl mx-auto px-4 mt-4 hidden">
+    <div class="bg-red-950/50 border border-red-800 rounded-lg p-3 flex items-center gap-3">
+      <svg class="w-4 h-4 text-red-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="10" stroke-width="2"/><path stroke-width="2" d="M12 8v4m0 4h.01"/></svg>
+      <p id="error-text" class="text-sm text-red-300 flex-1"></p>
+      <button onclick="hideError()" class="text-red-400 hover:text-red-300">&times;</button>
+    </div>
+  </div>
+
+  <!-- ==================== MAIN ==================== -->
+  <main class="max-w-7xl mx-auto px-4 py-6">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+      <!-- ===== LEFT COLUMN ===== -->
+      <div class="space-y-6">
+
+        <!-- S3 KNOWLEDGE BASE CARD -->
+        <div class="bg-nova-surface border border-nova-border rounded-xl p-6">
+          <h2 class="text-base font-semibold mb-4 flex items-center gap-2">
+            <svg class="w-5 h-5 text-nova-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/></svg>
+            S3 Knowledge Base
+          </h2>
+
+          <!-- S3 Bucket Configuration -->
+          <div class="space-y-3 mb-4">
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">S3 Bucket Name</label>
+              <input id="s3-bucket" type="text" value=""
+                class="w-full bg-slate-800 border border-nova-border rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-nova-primary transition"
+                placeholder="e.g. my-knowledge-base-bucket" />
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">S3 Prefix (optional)</label>
+              <input id="s3-prefix" type="text" value=""
+                class="w-full bg-slate-800 border border-nova-border rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-nova-primary transition"
+                placeholder="e.g. documents/" />
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Lambda Function URL</label>
+              <input id="lambda-url" type="text" value=""
+                class="w-full bg-slate-800 border border-nova-border rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-nova-primary transition"
+                placeholder="e.g. https://xxx.lambda-url.us-east-1.on.aws" />
+            </div>
+          </div>
+
+          <button id="btn-load-docs" onclick="loadS3Documents()"
+            class="w-full flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-gray-200 font-medium py-2.5 px-4 rounded-lg border border-nova-border transition">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            Load Documents from S3
+          </button>
+
+          <div id="s3-loading" class="mt-3 hidden items-center gap-2 text-nova-accent text-sm">
+            <span class="spinner"></span> Loading documents from S3…
+          </div>
+
+          <div id="s3-doc-list" class="mt-4 space-y-2 hidden">
+            <p class="text-sm text-gray-400 font-medium">S3 Documents (<span id="s3-doc-count">0</span>):</p>
+            <div id="s3-doc-items" class="max-h-60 overflow-y-auto space-y-2"></div>
+          </div>
+        </div>
+
+        <!-- BUILD GRAPH CARD -->
+        <div class="bg-nova-surface border border-nova-border rounded-xl p-6">
+          <h2 class="text-base font-semibold mb-4 flex items-center gap-2">
+            <svg class="w-5 h-5 text-nova-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            Build Knowledge Graph
+          </h2>
+
+          <div class="flex gap-3 mb-4">
+            <button id="btn-build" onclick="buildGraph()" disabled
+              class="flex-1 flex items-center justify-center gap-2 bg-nova-primary hover:bg-indigo-600 text-white font-medium py-2.5 px-4 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+              Build Graph
+            </button>
+            <button id="btn-reset" onclick="resetGraph()" class="hidden items-center gap-2 bg-nova-surface hover:bg-slate-600 text-gray-200 font-medium py-2.5 px-4 rounded-lg border border-nova-border transition">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+              Reset
+            </button>
+          </div>
+
+          <!-- Build progress -->
+          <div id="build-progress" class="hidden bg-indigo-950/30 border border-nova-primary/30 rounded-lg p-4">
+            <p class="text-sm text-indigo-300">Processing S3 documents with Amazon Nova via Bedrock…</p>
+            <p class="text-xs text-gray-500 mt-1">S3 Fetch → Chunking → Entity Extraction → Deduplication → Graph Build</p>
+            <div class="mt-3 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+              <div class="h-full bg-nova-primary rounded-full pulse-bar"></div>
+            </div>
+          </div>
+
+          <!-- Stats -->
+          <div id="stats-panel" class="hidden grid grid-cols-3 gap-3 fade-in">
+            <div class="bg-slate-800/50 rounded-lg p-3 text-center">
+              <p id="stat-nodes" class="text-2xl font-bold text-nova-primary">0</p>
+              <p class="text-xs text-gray-500 mt-1">Entities</p>
+            </div>
+            <div class="bg-slate-800/50 rounded-lg p-3 text-center">
+              <p id="stat-edges" class="text-2xl font-bold text-nova-accent">0</p>
+              <p class="text-xs text-gray-500 mt-1">Relations</p>
+            </div>
+            <div class="bg-slate-800/50 rounded-lg p-3 text-center">
+              <p id="stat-docs" class="text-2xl font-bold text-emerald-400">0</p>
+              <p class="text-xs text-gray-500 mt-1">Documents</p>
+            </div>
+            <p id="stat-summary" class="col-span-3 text-sm text-gray-400 mt-1"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== RIGHT COLUMN ===== -->
+      <div class="space-y-6">
+
+        <!-- QUERY CARD -->
+        <div class="bg-nova-surface border border-nova-border rounded-xl p-6">
+          <h2 class="text-base font-semibold mb-4 flex items-center gap-2">
+            <svg class="w-5 h-5 text-nova-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+            Ask a Question
+          </h2>
+
+          <form id="query-form" onsubmit="handleQuery(event)" class="flex gap-2 mb-4">
+            <input id="query-input" type="text" disabled
+              class="flex-1 bg-slate-800 border border-nova-border rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-nova-primary transition"
+              placeholder="Build a graph first to enable queries" />
+            <button id="btn-query" type="submit" disabled
+              class="flex items-center gap-2 bg-nova-primary hover:bg-indigo-600 text-white font-medium py-2.5 px-4 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+              Ask
+            </button>
+          </form>
+
+          <!-- Sample questions -->
+          <div id="sample-questions" class="mb-4 hidden">
+            <p class="text-xs text-gray-500 mb-2">Try asking:</p>
+            <div class="flex flex-wrap gap-2" id="sample-btns"></div>
+          </div>
+
+          <!-- Query loading -->
+          <div id="query-loading" class="hidden bg-indigo-950/30 border border-nova-primary/30 rounded-lg p-4">
+            <p class="text-sm text-indigo-300 flex items-center gap-2">
+              <span class="spinner"></span> Reasoning over the knowledge graph with Amazon Nova…
+            </p>
+          </div>
+
+          <!-- Query result -->
+          <div id="query-result" class="hidden space-y-4 fade-in">
+            <div class="bg-slate-800/50 rounded-lg p-4 border-l-4 border-nova-accent">
+              <p id="query-answer" class="text-gray-200"></p>
+            </div>
+            <div id="query-evidence" class="hidden">
+              <p class="text-sm font-medium text-gray-400 mb-2">Evidence (<span id="evidence-count">0</span> facts):</p>
+              <div id="evidence-items" class="space-y-2"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== FULL-WIDTH: GRAPH + FACTS ===== -->
+    <div id="graph-section" class="mt-6 space-y-6 hidden">
+
+      <!-- GRAPH VISUALIZATION -->
+      <div class="bg-nova-surface border border-nova-border rounded-xl p-6">
+        <h2 class="text-base font-semibold mb-4 flex items-center justify-between">
+          <span class="flex items-center gap-2">
+            <svg class="w-5 h-5 text-nova-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
+            Graph Visualization
+          </span>
+          <span id="graph-count" class="text-xs text-gray-500"></span>
+        </h2>
+        <div id="cy" style="width:100%;height:450px;border-radius:0.75rem;border:1px solid #334155;background:#0f172a;"></div>
+      </div>
+
+      <!-- FACTS LIST -->
+      <div class="bg-nova-surface border border-nova-border rounded-xl p-6">
+        <h2 class="text-base font-semibold mb-4 flex items-center gap-2">
+          <svg class="w-5 h-5 text-nova-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+          Extracted Facts
+        </h2>
+
+        <div class="mb-4">
+          <p class="text-sm text-gray-400 mb-2">Entities (<span id="entity-tag-count">0</span>):</p>
+          <div id="entity-tags" class="flex flex-wrap gap-1.5"></div>
+        </div>
+
+        <div>
+          <p class="text-sm text-gray-400 mb-2">Relations (<span id="rel-count">0</span>):</p>
+          <div id="relation-items" class="space-y-1.5"></div>
+          <button id="btn-show-all" onclick="toggleAllRelations()" class="hidden mt-3 text-sm text-nova-primary hover:text-indigo-400 flex items-center gap-1"></button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ==================== FOOTER ==================== -->
+  <footer class="border-t border-nova-border mt-12 py-6">
+    <div class="max-w-7xl mx-auto px-4 text-center">
+      <p class="text-xs text-gray-600">Nova MKG — Built for Amazon Nova Hackathon &nbsp;|&nbsp; Powered by Amazon Bedrock + AWS Lambda + S3</p>
+    </div>
+  </footer>
+
+  <!-- ==================== JAVASCRIPT ==================== -->
+  <script>
+    // ── Config ──
+    const SAMPLES = [
+      'What systems depend on Payment Service?',
+      'Who owns the Authentication Service?',
+      'What are the main components?',
+      'Show all dependencies',
+    ];
+
+    // ── State ──
+    let s3Documents = [];
+    let graphNodes = [];
+    let graphEdges = [];
+    let showAllRels = false;
+    let cy = null;
+
+    // ── Helpers ──
+    const $ = (sel) => document.querySelector(sel);
+    const $$ = (sel) => document.querySelectorAll(sel);
+    const show = (el) => { if (typeof el === 'string') el = $(el); el.classList.remove('hidden'); };
+    const hide = (el) => { if (typeof el === 'string') el = $(el); el.classList.add('hidden'); };
+    const setText = (sel, txt) => { $(sel).textContent = txt; };
+
+    function showError(msg) { setText('#error-text', msg); show('#error-banner'); }
+    function hideError() { hide('#error-banner'); }
+
+    function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+    function getLambdaUrl() {
+      const url = $('#lambda-url').value.trim();
+      if (!url) throw new Error('Please enter the Lambda Function URL');
+      return url.replace(/\/$/, '');
+    }
+
+    function getS3Config() {
+      const bucket = $('#s3-bucket').value.trim();
+      if (!bucket) throw new Error('Please enter the S3 Bucket Name');
+      return {
+        bucket,
+        prefix: $('#s3-prefix').value.trim(),
+      };
+    }
+
+    // ── Load S3 Documents ──
+    async function loadS3Documents() {
+      hideError();
+      show('#s3-loading');
+      const btn = $('#btn-load-docs');
+      btn.disabled = true;
+
+      try {
+        const lambdaUrl = getLambdaUrl();
+        const s3Config = getS3Config();
+
+        const url = `${lambdaUrl}/list-documents`;
+        console.log('Fetching:', url, { bucket: s3Config.bucket, prefix: s3Config.prefix });
+
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          mode: 'cors',
+          body: JSON.stringify({
+            bucket: s3Config.bucket,
+            prefix: s3Config.prefix,
+          }),
+        });
+
+        console.log('Response status:', res.status);
+
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(e.detail || e.message || res.statusText);
+        }
+
+        const data = await res.json();
+        console.log('Response data:', data);
+        // Handle both direct response and Lambda proxy response
+        const docs = data.documents || (data.body && JSON.parse(data.body).documents) || [];
+        s3Documents = docs;
+
+        renderS3Documents();
+        $('#btn-build').disabled = s3Documents.length === 0;
+
+      } catch (err) {
+        showError(`Failed to load S3 documents: ${err.message}`);
+      } finally {
+        hide('#s3-loading');
+        btn.disabled = false;
+      }
+    }
+
+    function renderS3Documents() {
+      if (!s3Documents.length) {
+        hide('#s3-doc-list');
+        return;
+      }
+      show('#s3-doc-list');
+      setText('#s3-doc-count', s3Documents.length);
+      $('#s3-doc-items').innerHTML = s3Documents.map(doc => `
+        <div class="flex items-center gap-3 bg-slate-800/50 rounded-lg px-3 py-2">
+          <svg class="w-4 h-4 text-nova-primary flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/>
+          </svg>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm text-gray-200 truncate">${escHtml(doc.name || doc.key)}</p>
+            <p class="text-xs text-gray-500">s3://${escHtml(doc.bucket || '')}/${escHtml(doc.key || '')}${doc.size ? ' · ' + formatSize(doc.size) : ''}</p>
+          </div>
+          <span class="text-xs bg-cyan-900/50 text-cyan-400 px-2 py-0.5 rounded-full">S3</span>
+        </div>
+      `).join('');
+    }
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    // ── Build Graph (via Lambda → Bedrock) ──
+    async function buildGraph() {
+      const btn = $('#btn-build');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Building Graph…';
+      show('#build-progress');
+      hide('#stats-panel');
+      hideError();
+
+      try {
+        const lambdaUrl = getLambdaUrl();
+        const s3Config = getS3Config();
+        const s3Keys = s3Documents.map(d => d.key);
+
+        const res = await fetch(`${lambdaUrl}/build-graph`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            bucket: s3Config.bucket,
+            prefix: s3Config.prefix,
+            s3_keys: s3Keys,
+          }),
+        });
+
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(e.detail || e.message || res.statusText);
+        }
+
+        const data = await res.json();
+
+        graphNodes = data.nodes || [];
+        graphEdges = data.edges || [];
+
+        setText('#stat-nodes', graphNodes.length);
+        setText('#stat-edges', graphEdges.length);
+        setText('#stat-docs', s3Documents.length);
+        setText('#stat-summary', data.summary || '');
+
+        show('#stats-panel');
+        show('#btn-reset');
+        enableQuery();
+        renderGraphViz();
+        renderFacts();
+
+      } catch (err) {
+        showError(`Build failed: ${err.message}`);
+      } finally {
+        hide('#build-progress');
+        btn.disabled = false;
+        btn.innerHTML = `<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> Build Graph`;
+      }
+    }
+
+    // ── Reset ──
+    async function resetGraph() {
+      try {
+        const lambdaUrl = getLambdaUrl();
+        await fetch(`${lambdaUrl}/reset`, { method: 'POST' });
+      } catch {}
+      s3Documents = [];
+      graphNodes = [];
+      graphEdges = [];
+      showAllRels = false;
+      renderS3Documents();
+      hide('#stats-panel');
+      hide('#btn-reset');
+      hide('#graph-section');
+      hide('#query-result');
+      hide('#sample-questions');
+      $('#btn-build').disabled = true;
+      disableQuery();
+      if (cy) { cy.destroy(); cy = null; }
+    }
+
+    // ── Query (via Lambda → Bedrock) ──
+    function enableQuery() {
+      const inp = $('#query-input');
+      inp.disabled = false;
+      inp.placeholder = 'Ask a question about your knowledge graph…';
+      $('#btn-query').disabled = false;
+      renderSamples();
+    }
+
+    function disableQuery() {
+      const inp = $('#query-input');
+      inp.disabled = true;
+      inp.placeholder = 'Build a graph first to enable queries';
+      $('#btn-query').disabled = true;
+    }
+
+    function renderSamples() {
+      show('#sample-questions');
+      $('#sample-btns').innerHTML = SAMPLES.map(q => `
+        <button onclick="setSample(this)" data-q="${escHtml(q)}"
+          class="text-xs bg-slate-800/50 hover:bg-slate-700 text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-full border border-nova-border transition">${escHtml(q)}</button>
+      `).join('');
+    }
+
+    function setSample(btn) { $('#query-input').value = btn.dataset.q; }
+
+    async function handleQuery(e) {
+      e.preventDefault();
+      const q = $('#query-input').value.trim();
+      if (!q) return;
+
+      hide('#query-result');
+      show('#query-loading');
+      hideError();
+
+      try {
+        const lambdaUrl = getLambdaUrl();
+        const s3Config = getS3Config();
+
+        const res = await fetch(`${lambdaUrl}/query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question: q,
+            bucket: s3Config.bucket,
+            prefix: s3Config.prefix,
+          }),
+        });
+
+        if (!res.ok) {
+          const er = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(er.detail || er.message || res.statusText);
+        }
+
+        const data = await res.json();
+
+        setText('#query-answer', data.answer || 'No answer generated.');
+        show('#query-result');
+
+        if (data.items && data.items.length) {
+          setText('#evidence-count', data.items.length);
+          $('#evidence-items').innerHTML = data.items.map(item => `
+            <div class="bg-slate-800/30 rounded-lg p-3 border border-nova-border">
+              <div class="flex items-center gap-2 text-sm">
+                <span class="text-nova-primary font-medium">${escHtml(item.subject)}</span>
+                <span class="text-gray-500">—[${escHtml(item.predicate)}]→</span>
+                <span class="text-nova-accent font-medium">${escHtml(item.object)}</span>
+              </div>
+              ${(item.citations || []).map(c => `
+                <div class="flex items-start gap-2 text-xs bg-slate-900/50 rounded px-2 py-1.5 mt-2">
+                  <svg class="w-3 h-3 text-gray-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+                  <div>
+                    <span class="text-gray-400">${escHtml((c.source_uri||'').split('/').pop())}</span>
+                    ${c.page ? `<span class="text-gray-600"> · Page ${c.page}</span>` : ''}
+                    ${c.span ? `<p class="text-gray-500 mt-0.5 italic">"${escHtml(c.span)}"</p>` : ''}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `).join('');
+          show('#query-evidence');
+        } else {
+          hide('#query-evidence');
+        }
+
+      } catch (err) {
+        showError(`Query failed: ${err.message}`);
+      } finally {
+        hide('#query-loading');
+      }
+    }
+
+    // ── Graph Visualization (Cytoscape) ──
+    function renderGraphViz() {
+      if (!graphNodes.length) return;
+      show('#graph-section');
+      setText('#graph-count', `${graphNodes.length} nodes, ${graphEdges.length} edges`);
+
+      const elements = [];
+
+      const labelMap = {};
+      graphNodes.forEach(n => { labelMap[n.id] = n.label; });
+
+      graphNodes.forEach(n => elements.push({
+        data: { id: n.id, label: n.label, entityType: (n.properties && n.properties.entity_type) || n.type }
+      }));
+
+      graphEdges.forEach(e => elements.push({
+        data: { id: e.id, source: e.subject_id, target: e.object_id, label: e.predicate }
+      }));
+
+      if (cy) cy.destroy();
+
+      cy = cytoscape({
+        container: $('#cy'),
+        elements,
+        style: [
+          {
+            selector: 'node',
+            style: {
+              'background-color': '#6366f1',
+              'label': 'data(label)',
+              'color': '#e2e8f0',
+              'text-valign': 'bottom',
+              'text-halign': 'center',
+              'font-size': '10px',
+              'text-margin-y': 6,
+              'width': 32,
+              'height': 32,
+              'border-width': 2,
+              'border-color': '#818cf8',
+              'text-outline-width': 2,
+              'text-outline-color': '#0f172a',
+            }
+          },
+          {
+            selector: 'edge',
+            style: {
+              'width': 2,
+              'line-color': '#475569',
+              'target-arrow-color': '#22d3ee',
+              'target-arrow-shape': 'triangle',
+              'curve-style': 'bezier',
+              'label': 'data(label)',
+              'color': '#94a3b8',
+              'font-size': '8px',
+              'text-rotation': 'autorotate',
+              'text-outline-width': 2,
+              'text-outline-color': '#0f172a',
+            }
+          },
+          {
+            selector: 'node:selected',
+            style: { 'background-color': '#22d3ee', 'border-color': '#06b6d4' }
+          }
+        ],
+        layout: {
+          name: 'cose',
+          animate: true,
+          animationDuration: 500,
+          nodeRepulsion: function(){ return 8000; },
+          idealEdgeLength: function(){ return 120; },
+          gravity: 0.25,
+          numIter: 200,
+          padding: 30,
+        },
+        userZoomingEnabled: true,
+        userPanningEnabled: true,
+        boxSelectionEnabled: false,
+      });
+    }
+
+    // ── Facts List ──
+    function renderFacts() {
+      if (!graphNodes.length && !graphEdges.length) return;
+
+      setText('#entity-tag-count', graphNodes.length);
+      $('#entity-tags').innerHTML = graphNodes.map(n => {
+        const t = (n.properties && n.properties.entity_type) || n.type;
+        return `<span class="text-xs px-2 py-1 rounded-full border border-nova-border bg-slate-800/50 text-gray-300" title="Confidence: ${n.confidence}">${escHtml(n.label)} <span class="text-gray-600">(${escHtml(t)})</span></span>`;
+      }).join('');
+
+      showAllRels = false;
+      setText('#rel-count', graphEdges.length);
+      renderRelations();
+
+      if (graphEdges.length > 10) {
+        show('#btn-show-all');
+        $('#btn-show-all').textContent = `▼ Show all ${graphEdges.length} relations`;
+      } else {
+        hide('#btn-show-all');
+      }
+    }
+
+    function renderRelations() {
+      const labelMap = {};
+      graphNodes.forEach(n => { labelMap[n.id] = n.label; });
+      const edges = showAllRels ? graphEdges : graphEdges.slice(0, 10);
+
+      $('#relation-items').innerHTML = edges.map(e => `
+        <div class="flex items-center gap-2 text-sm bg-slate-800/30 rounded-lg px-3 py-2">
+          <span class="text-nova-primary font-medium truncate">${escHtml(labelMap[e.subject_id] || e.subject_id)}</span>
+          <span class="text-gray-600 text-xs whitespace-nowrap">—[${escHtml(e.predicate)}]→</span>
+          <span class="text-nova-accent font-medium truncate">${escHtml(labelMap[e.object_id] || e.object_id)}</span>
+          <span class="text-gray-700 text-xs ml-auto whitespace-nowrap">${(e.confidence * 100).toFixed(0)}%</span>
+        </div>
+      `).join('');
+    }
+
+    function toggleAllRelations() {
+      showAllRels = !showAllRels;
+      renderRelations();
+      $('#btn-show-all').textContent = showAllRels
+        ? '▲ Show less'
+        : `▼ Show all ${graphEdges.length} relations`;
+    }
+  </script>
+</body>
+</html>
